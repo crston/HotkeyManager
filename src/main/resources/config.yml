@@ -1,0 +1,61 @@
+hotkeys:
+  Q:
+    enabled: true
+    command: "say Q pressed by %player%"
+    executor: "player"
+  SHIFT_Q:
+    enabled: true
+    command: "say Shift + Q pressed"
+    executor: "player"
+  F:
+    enabled: true
+    command: "say F key"
+    executor: "player"
+  SHIFT_F:
+    enabled: true
+    command: "say Shift + F key"
+    executor: "player"
+  SHIFT_1:
+    enabled: true
+    command: "say Shift + 1 key"
+    executor: "console"
+  SHIFT_2:
+    enabled: true
+    command: "say Shift + 2 key"
+    executor: "console"
+  SHIFT_3:
+    enabled: true
+    command: "say Shift + 3 key"
+    executor: "console"
+  SHIFT_4:
+    enabled: true
+    command: "say Shift + 4 key"
+    executor: "console"
+  SHIFT_5:
+    enabled: true
+    command: "say Shift + 5 key"
+    executor: "console"
+  SHIFT_6:
+    enabled: true
+    command: "say Shift + 6 key"
+    executor: "console"
+  SHIFT_7:
+    enabled: true
+    command: "say Shift + 7 key"
+    executor: "console"
+  SHIFT_8:
+    enabled: true
+    command: "say Shift + 8 key"
+    executor: "console"
+  SHIFT_9:
+    enabled: true
+    command: "say Shift + 9 key"
+    executor: "console"
+  L:
+    enabled: true
+    command: "say L key"
+    executor: "op"
+  SHIFT_L:
+    enabled: true
+    command: "say Shift + L key"
+    executor: "op"

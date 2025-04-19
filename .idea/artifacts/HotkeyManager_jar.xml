@@ -1,0 +1,8 @@
+<component name="ArtifactManager">
+  <artifact type="jar" name="HotkeyManager:jar">
+    <output-path>$PROJECT_DIR$/out/artifacts/HotkeyManager_jar</output-path>
+    <root id="archive" name="HotkeyManager.jar">
+      <element id="module-output" name="HotkeyManager" />
+    </root>
+  </artifact>
+</component>
