@@ -9,23 +9,23 @@ import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
 import org.bukkit.event.*;
 import org.bukkit.event.player.*;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.*;
+import java.util.logging.Level;
 
 public class HotkeyManager extends JavaPlugin implements Listener {
 
     private final Map<String, HotkeyAction> hotkeyMap = new HashMap<>();
-    private final Map<UUID, Long> lCooldowns = new HashMap<>();
-    private final long lCooldownMillis = 500; // 0.5초 쿨타임
+    private final Set<UUID> recentShiftL = new HashSet<>();
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
         loadHotkeys();
         getServer().getPluginManager().registerEvents(this, this);
-        registerAdvancementListener();
-        registerQKeyListener();
+        registerPacketListeners();
 
         Objects.requireNonNull(getCommand("hotkeyreload")).setExecutor((sender, command, label, args) -> {
             reloadConfig();
@@ -49,7 +49,7 @@ public class HotkeyManager extends JavaPlugin implements Listener {
         }
     }
 
-    private void registerAdvancementListener() {
+    private void registerPacketListeners() {
         ProtocolLibrary.getProtocolManager().addPacketListener(new PacketAdapter(this,
                 ListenerPriority.NORMAL, PacketType.Play.Client.ADVANCEMENTS) {
             @Override
@@ -57,34 +57,47 @@ public class HotkeyManager extends JavaPlugin implements Listener {
                 Player player = event.getPlayer();
                 if (!player.isOnline()) return;
 
-                boolean sneaking = player.isSneaking();
+                Bukkit.getScheduler().runTask(HotkeyManager.this, () -> {
+                    boolean lEnabled = hotkeyMap.containsKey("L");
+                    boolean shiftLEnabled = hotkeyMap.containsKey("SHIFT_L");
 
-                if (sneaking) {
-                    if (!hotkeyMap.containsKey("SHIFT_L")) return;
-                    Bukkit.getScheduler().runTask(HotkeyManager.this, () -> {
-                        lCooldowns.put(player.getUniqueId(), System.currentTimeMillis());
-                        handleKey("SHIFT_L", player);
-                    });
-                } else {
-                    if (!hotkeyMap.containsKey("L")) return;
-                    Long last = lCooldowns.get(player.getUniqueId());
-                    if (last != null && System.currentTimeMillis() - last < lCooldownMillis) return;
-                    Bukkit.getScheduler().runTask(HotkeyManager.this, () -> handleKey("L", player));
-                }
+                    // L, SHIFT_L 둘 다 없으면 발전과제 창 정상 열림
+                    if (lEnabled || shiftLEnabled) {
+                        closeAdvancementGUI(player);
+                    }
+
+                    UUID uuid = player.getUniqueId();
+                    boolean sneaking = player.isSneaking();
+
+                    if (sneaking) {
+                        if (shiftLEnabled) {
+                            handleKey("SHIFT_L", player);
+                        }
+                        recentShiftL.add(uuid);
+                    } else {
+                        if (recentShiftL.remove(uuid)) {
+                            return;
+                        }
+                        if (lEnabled) {
+                            handleKey("L", player);
+                        }
+                    }
+                });
             }
         });
-    }
 
-    private void registerQKeyListener() {
+        // Q 키 감지 (아이템 없어도)
         ProtocolLibrary.getProtocolManager().addPacketListener(new PacketAdapter(this,
                 ListenerPriority.NORMAL, PacketType.Play.Client.BLOCK_DIG) {
             @Override
             public void onPacketReceiving(PacketEvent event) {
                 Player player = event.getPlayer();
-                var packet = event.getPacket();
-                var action = packet.getPlayerDigTypes().read(0);
+                var action = event.getPacket().getPlayerDigTypes().read(0);
 
                 if (action == EnumWrappers.PlayerDigType.DROP_ITEM || action == EnumWrappers.PlayerDigType.DROP_ALL_ITEMS) {
+                    ItemStack item = player.getInventory().getItemInMainHand();
+                    if (!item.getType().isAir()) return;
+
                     String key = player.isSneaking() ? "SHIFT_Q" : "Q";
                     if (!hotkeyMap.containsKey(key)) return;
 
@@ -92,6 +105,16 @@ public class HotkeyManager extends JavaPlugin implements Listener {
                 }
             }
         });
+    }
+
+    private void closeAdvancementGUI(Player player) {
+        try {
+            var packet = ProtocolLibrary.getProtocolManager().createPacket(PacketType.Play.Server.CLOSE_WINDOW);
+            packet.getIntegers().write(0, 0);
+            ProtocolLibrary.getProtocolManager().sendServerPacket(player, packet);
+        } catch (Exception e) {
+            getLogger().log(Level.WARNING, "Failed to close Advancement GUI", e);
+        }
     }
 
     @EventHandler
@@ -127,24 +150,9 @@ public class HotkeyManager extends JavaPlugin implements Listener {
         handleKey(key, player);
     }
 
-    @EventHandler
-    public void onJoin(PlayerJoinEvent event) {
-        Player player = event.getPlayer();
-        Bukkit.getScheduler().runTaskLater(this, () -> {
-            if (player.isOnline()) {
-                player.kickPlayer("RE-JOIN PLEASE");
-            }
-        }, 40L);
-    }
-
     private void handleKey(String key, Player player) {
         HotkeyAction action = hotkeyMap.get(key.toUpperCase(Locale.ROOT));
         if (action == null) return;
-
-        if (player.isOnline()) {
-            player.closeInventory();
-        }
-
         action.execute(player);
     }
 
