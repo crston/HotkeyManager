@@ -3,6 +3,7 @@ package com.gmail.bobason01;
 import com.comphenix.protocol.PacketType;
 import com.comphenix.protocol.ProtocolLibrary;
 import com.comphenix.protocol.events.*;
+import com.comphenix.protocol.wrappers.EnumWrappers;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
@@ -24,6 +25,7 @@ public class HotkeyManager extends JavaPlugin implements Listener {
         loadHotkeys();
         getServer().getPluginManager().registerEvents(this, this);
         registerAdvancementListener();
+        registerQKeyListener();
 
         Objects.requireNonNull(getCommand("hotkeyreload")).setExecutor((sender, command, label, args) -> {
             reloadConfig();
@@ -53,6 +55,8 @@ public class HotkeyManager extends JavaPlugin implements Listener {
             @Override
             public void onPacketReceiving(PacketEvent event) {
                 Player player = event.getPlayer();
+                if (!player.isOnline()) return;
+
                 boolean sneaking = player.isSneaking();
 
                 if (sneaking) {
@@ -66,6 +70,25 @@ public class HotkeyManager extends JavaPlugin implements Listener {
                     Long last = lCooldowns.get(player.getUniqueId());
                     if (last != null && System.currentTimeMillis() - last < lCooldownMillis) return;
                     Bukkit.getScheduler().runTask(HotkeyManager.this, () -> handleKey("L", player));
+                }
+            }
+        });
+    }
+
+    private void registerQKeyListener() {
+        ProtocolLibrary.getProtocolManager().addPacketListener(new PacketAdapter(this,
+                ListenerPriority.NORMAL, PacketType.Play.Client.BLOCK_DIG) {
+            @Override
+            public void onPacketReceiving(PacketEvent event) {
+                Player player = event.getPlayer();
+                var packet = event.getPacket();
+                var action = packet.getPlayerDigTypes().read(0);
+
+                if (action == EnumWrappers.PlayerDigType.DROP_ITEM || action == EnumWrappers.PlayerDigType.DROP_ALL_ITEMS) {
+                    String key = player.isSneaking() ? "SHIFT_Q" : "Q";
+                    if (!hotkeyMap.containsKey(key)) return;
+
+                    Bukkit.getScheduler().runTask(HotkeyManager.this, () -> handleKey(key, player));
                 }
             }
         });
@@ -104,12 +127,22 @@ public class HotkeyManager extends JavaPlugin implements Listener {
         handleKey(key, player);
     }
 
+    @EventHandler
+    public void onJoin(PlayerJoinEvent event) {
+        Player player = event.getPlayer();
+        Bukkit.getScheduler().runTaskLater(this, () -> {
+            if (player.isOnline()) {
+                player.kickPlayer("RE-JOIN PLEASE");
+            }
+        }, 40L);
+    }
+
     private void handleKey(String key, Player player) {
         HotkeyAction action = hotkeyMap.get(key.toUpperCase(Locale.ROOT));
         if (action == null) return;
 
         if (player.isOnline()) {
-            player.closeInventory(); // 인벤토리 열려있으면 닫기
+            player.closeInventory();
         }
 
         action.execute(player);
