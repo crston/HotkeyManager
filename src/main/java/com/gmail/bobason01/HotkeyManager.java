@@ -18,7 +18,10 @@ import java.util.logging.Level;
 public class HotkeyManager extends JavaPlugin implements Listener {
 
     private final Map<String, HotkeyAction> hotkeyMap = new HashMap<>();
-    private final Set<UUID> recentShiftL = new HashSet<>();
+    private final Map<UUID, Long> lastShiftLPress = new HashMap<>();
+    private static final long SHIFT_MEMORY_MS = 600;
+    private static final long SHIFT_L_SIMULTANEOUS_MS = 100;
+    private static final long GUI_COMMAND_DELAY_TICKS = 1L;
 
     @Override
     public void onEnable() {
@@ -61,32 +64,30 @@ public class HotkeyManager extends JavaPlugin implements Listener {
                     boolean lEnabled = hotkeyMap.containsKey("L");
                     boolean shiftLEnabled = hotkeyMap.containsKey("SHIFT_L");
 
-                    // L, SHIFT_L 둘 다 없으면 발전과제 창 정상 열림
-                    if (lEnabled || shiftLEnabled) {
-                        closeAdvancementGUI(player);
-                    }
-
                     UUID uuid = player.getUniqueId();
-                    boolean sneaking = player.isSneaking();
+                    long now = System.currentTimeMillis();
 
-                    if (sneaking) {
-                        if (shiftLEnabled) {
-                            handleKey("SHIFT_L", player);
+                    if (player.isSneaking() && shiftLEnabled) {
+                        suppressAdvancementGUIOnceBeforeDelay(player, GUI_COMMAND_DELAY_TICKS);
+                        handleKeyWithDelay("SHIFT_L", player, GUI_COMMAND_DELAY_TICKS);
+                        lastShiftLPress.put(uuid, now);
+                    } else if (lEnabled) {
+                        Long lastShift = lastShiftLPress.get(uuid);
+                        if (lastShift != null) {
+                            long timeSinceShift = now - lastShift;
+                            if (timeSinceShift < SHIFT_L_SIMULTANEOUS_MS ||
+                                    (timeSinceShift < SHIFT_MEMORY_MS && player.isSneaking())) {
+                                suppressAdvancementGUIOnceBeforeDelay(player, GUI_COMMAND_DELAY_TICKS);
+                                return;
+                            }
                         }
-                        recentShiftL.add(uuid);
-                    } else {
-                        if (recentShiftL.remove(uuid)) {
-                            return;
-                        }
-                        if (lEnabled) {
-                            handleKey("L", player);
-                        }
+                        suppressAdvancementGUIOnceBeforeDelay(player, GUI_COMMAND_DELAY_TICKS);
+                        handleKeyWithDelay("L", player, GUI_COMMAND_DELAY_TICKS);
                     }
                 });
             }
         });
 
-        // Q 키 감지 (아이템 없어도)
         ProtocolLibrary.getProtocolManager().addPacketListener(new PacketAdapter(this,
                 ListenerPriority.NORMAL, PacketType.Play.Client.BLOCK_DIG) {
             @Override
@@ -105,6 +106,12 @@ public class HotkeyManager extends JavaPlugin implements Listener {
                 }
             }
         });
+    }
+
+    private void suppressAdvancementGUIOnceBeforeDelay(Player player, long delayTicks) {
+        closeAdvancementGUI(player);
+        long secondDelay = Math.max(0, delayTicks - 1);
+        Bukkit.getScheduler().runTaskLater(this, () -> closeAdvancementGUI(player), secondDelay);
     }
 
     private void closeAdvancementGUI(Player player) {
@@ -154,6 +161,10 @@ public class HotkeyManager extends JavaPlugin implements Listener {
         HotkeyAction action = hotkeyMap.get(key.toUpperCase(Locale.ROOT));
         if (action == null) return;
         action.execute(player);
+    }
+
+    private void handleKeyWithDelay(String key, Player player, long delayTicks) {
+        Bukkit.getScheduler().runTaskLater(this, () -> handleKey(key, player), delayTicks);
     }
 
     private static class HotkeyAction {

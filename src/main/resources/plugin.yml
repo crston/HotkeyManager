@@ -7,6 +7,6 @@ api-version: 1.16
 depend: [ProtocolLib]
 commands:
   hotkeyreload:
-    description: Reload HotkeyManager config
-    permission: hotkeymanager.reload
+    description: Reloads the hotkey configuration.
     usage: /hotkeyreload
+    permission: hotkeymanager.reload
