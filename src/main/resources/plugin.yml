@@ -2,7 +2,7 @@ name: HotkeyManager
 main: com.gmail.bobason01.HotkeyManager
 description: Custom Hotkey Manager
 author: crston
-version: 1.1
+version: 2.0
 api-version: 1.16
 depend: [ProtocolLib]
 commands:

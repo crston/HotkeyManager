@@ -4,6 +4,7 @@ import com.comphenix.protocol.PacketType;
 import com.comphenix.protocol.ProtocolLibrary;
 import com.comphenix.protocol.events.*;
 import com.comphenix.protocol.wrappers.EnumWrappers;
+import com.comphenix.protocol.wrappers.WrappedChatComponent;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
@@ -61,25 +62,22 @@ public class HotkeyManager extends JavaPlugin implements Listener {
                 if (!player.isOnline()) return;
 
                 Bukkit.getScheduler().runTask(HotkeyManager.this, () -> {
-                    boolean lEnabled = hotkeyMap.containsKey("L");
-                    boolean shiftLEnabled = hotkeyMap.containsKey("SHIFT_L");
-
+                    boolean shift = player.isSneaking();
                     UUID uuid = player.getUniqueId();
                     long now = System.currentTimeMillis();
 
-                    if (player.isSneaking() && shiftLEnabled) {
+                    boolean hasL = hotkeyMap.containsKey("L");
+                    boolean hasShiftL = hotkeyMap.containsKey("SHIFT_L");
+
+                    if (shift && hasShiftL) {
                         suppressAdvancementGUIOnceBeforeDelay(player, GUI_COMMAND_DELAY_TICKS);
                         handleKeyWithDelay("SHIFT_L", player, GUI_COMMAND_DELAY_TICKS);
                         lastShiftLPress.put(uuid, now);
-                    } else if (lEnabled) {
-                        Long lastShift = lastShiftLPress.get(uuid);
-                        if (lastShift != null) {
-                            long timeSinceShift = now - lastShift;
-                            if (timeSinceShift < SHIFT_L_SIMULTANEOUS_MS ||
-                                    (timeSinceShift < SHIFT_MEMORY_MS && player.isSneaking())) {
-                                suppressAdvancementGUIOnceBeforeDelay(player, GUI_COMMAND_DELAY_TICKS);
-                                return;
-                            }
+                    } else if (hasL) {
+                        long timeSinceShift = now - lastShiftLPress.getOrDefault(uuid, 0L);
+                        if (timeSinceShift < SHIFT_L_SIMULTANEOUS_MS || (timeSinceShift < SHIFT_MEMORY_MS && shift)) {
+                            suppressAdvancementGUIOnceBeforeDelay(player, GUI_COMMAND_DELAY_TICKS);
+                            return;
                         }
                         suppressAdvancementGUIOnceBeforeDelay(player, GUI_COMMAND_DELAY_TICKS);
                         handleKeyWithDelay("L", player, GUI_COMMAND_DELAY_TICKS);
@@ -95,15 +93,16 @@ public class HotkeyManager extends JavaPlugin implements Listener {
                 Player player = event.getPlayer();
                 var action = event.getPacket().getPlayerDigTypes().read(0);
 
-                if (action == EnumWrappers.PlayerDigType.DROP_ITEM || action == EnumWrappers.PlayerDigType.DROP_ALL_ITEMS) {
-                    ItemStack item = player.getInventory().getItemInMainHand();
-                    if (!item.getType().isAir()) return;
+                if (action != EnumWrappers.PlayerDigType.DROP_ITEM && action != EnumWrappers.PlayerDigType.DROP_ALL_ITEMS)
+                    return;
 
-                    String key = player.isSneaking() ? "SHIFT_Q" : "Q";
-                    if (!hotkeyMap.containsKey(key)) return;
+                ItemStack item = player.getInventory().getItemInMainHand();
+                if (!item.getType().isAir()) return;
 
-                    Bukkit.getScheduler().runTask(HotkeyManager.this, () -> handleKey(key, player));
-                }
+                String key = player.isSneaking() ? "SHIFT_Q" : "Q";
+                if (!hotkeyMap.containsKey(key)) return;
+
+                Bukkit.getScheduler().runTask(HotkeyManager.this, () -> handleKey(key, player));
             }
         });
     }
@@ -125,10 +124,27 @@ public class HotkeyManager extends JavaPlugin implements Listener {
     }
 
     @EventHandler
+    public void onJoin(PlayerJoinEvent event) {
+        Player player = event.getPlayer();
+
+        Bukkit.getScheduler().runTaskLater(this, () -> {
+            try {
+                var packet = ProtocolLibrary.getProtocolManager().createPacket(PacketType.Play.Server.OPEN_WINDOW);
+                packet.getIntegers().write(0, 0);
+                packet.getStrings().write(0, "minecraft:advancements");
+                packet.getChatComponents().write(0, WrappedChatComponent.fromText("Advancements"));
+                ProtocolLibrary.getProtocolManager().sendServerPacket(player, packet);
+                closeAdvancementGUI(player);
+            } catch (Exception e) {
+                getLogger().log(Level.WARNING, "Failed to open/close Advancement GUI for initialization", e);
+            }
+        }, 20L);
+    }
+
+    @EventHandler
     public void onDrop(PlayerDropItemEvent event) {
         Player player = event.getPlayer();
         String key = player.isSneaking() ? "SHIFT_Q" : "Q";
-
         if (!hotkeyMap.containsKey(key)) return;
 
         event.setCancelled(true);
@@ -139,7 +155,6 @@ public class HotkeyManager extends JavaPlugin implements Listener {
     public void onSwap(PlayerSwapHandItemsEvent event) {
         Player player = event.getPlayer();
         String key = player.isSneaking() ? "SHIFT_F" : "F";
-
         if (!hotkeyMap.containsKey(key)) return;
 
         event.setCancelled(true);
@@ -152,42 +167,36 @@ public class HotkeyManager extends JavaPlugin implements Listener {
         if (!player.isSneaking()) return;
 
         String key = "SHIFT_" + (event.getNewSlot() + 1);
-        if (!hotkeyMap.containsKey(key)) return;
+        HotkeyAction action = hotkeyMap.get(key);
+        if (action == null) return;
 
-        handleKey(key, player);
+        int originalSlot = event.getPreviousSlot();
+        action.execute(player);
+        Bukkit.getScheduler().runTaskLater(this, () -> player.getInventory().setHeldItemSlot(originalSlot), 1L);
     }
 
     private void handleKey(String key, Player player) {
-        HotkeyAction action = hotkeyMap.get(key.toUpperCase(Locale.ROOT));
-        if (action == null) return;
-        action.execute(player);
+        Optional.ofNullable(hotkeyMap.get(key)).ifPresent(action -> action.execute(player));
     }
 
     private void handleKeyWithDelay(String key, Player player, long delayTicks) {
         Bukkit.getScheduler().runTaskLater(this, () -> handleKey(key, player), delayTicks);
     }
 
-    private static class HotkeyAction {
-        private final String command;
-        private final String executor;
-
-        public HotkeyAction(String command, String executor) {
-            this.command = command;
-            this.executor = executor;
-        }
+    private record HotkeyAction(String command, String executor) {
 
         public void execute(Player player) {
-            String parsedCommand = command.replace("%player%", player.getName());
-            switch (executor) {
-                case "console" -> Bukkit.dispatchCommand(Bukkit.getConsoleSender(), parsedCommand);
-                case "op" -> {
-                    boolean wasOp = player.isOp();
-                    player.setOp(true);
-                    player.performCommand(parsedCommand);
-                    player.setOp(wasOp);
+                String parsedCommand = command.replace("%player%", player.getName());
+                switch (executor) {
+                    case "console" -> Bukkit.dispatchCommand(Bukkit.getConsoleSender(), parsedCommand);
+                    case "op" -> {
+                        boolean wasOp = player.isOp();
+                        player.setOp(true);
+                        player.performCommand(parsedCommand);
+                        player.setOp(wasOp);
+                    }
+                    default -> player.performCommand(parsedCommand);
                 }
-                default -> player.performCommand(parsedCommand);
             }
         }
-    }
 }
