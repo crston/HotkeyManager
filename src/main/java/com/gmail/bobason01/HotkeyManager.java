@@ -14,12 +14,12 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.*;
-import java.util.logging.Level;
 
 public class HotkeyManager extends JavaPlugin implements Listener {
 
     private final Map<String, HotkeyAction> hotkeyMap = new HashMap<>();
     private final Map<UUID, Long> lastShiftLPress = new HashMap<>();
+
     private static final long SHIFT_MEMORY_MS = 600;
     private static final long SHIFT_L_SIMULTANEOUS_MS = 100;
     private static final long GUI_COMMAND_DELAY_TICKS = 1L;
@@ -54,6 +54,7 @@ public class HotkeyManager extends JavaPlugin implements Listener {
     }
 
     private void registerPacketListeners() {
+        // L, SHIFT_L 처리
         ProtocolLibrary.getProtocolManager().addPacketListener(new PacketAdapter(this,
                 ListenerPriority.NORMAL, PacketType.Play.Client.ADVANCEMENTS) {
             @Override
@@ -86,6 +87,7 @@ public class HotkeyManager extends JavaPlugin implements Listener {
             }
         });
 
+        // Q, SHIFT_Q 처리
         ProtocolLibrary.getProtocolManager().addPacketListener(new PacketAdapter(this,
                 ListenerPriority.NORMAL, PacketType.Play.Client.BLOCK_DIG) {
             @Override
@@ -119,14 +121,13 @@ public class HotkeyManager extends JavaPlugin implements Listener {
             packet.getIntegers().write(0, 0);
             ProtocolLibrary.getProtocolManager().sendServerPacket(player, packet);
         } catch (Exception e) {
-            getLogger().log(Level.WARNING, "Failed to close Advancement GUI", e);
+            getLogger().warning("Failed to close Advancement GUI: " + e.getMessage());
         }
     }
 
     @EventHandler
     public void onJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
-
         Bukkit.getScheduler().runTaskLater(this, () -> {
             try {
                 var packet = ProtocolLibrary.getProtocolManager().createPacket(PacketType.Play.Server.OPEN_WINDOW);
@@ -136,7 +137,7 @@ public class HotkeyManager extends JavaPlugin implements Listener {
                 ProtocolLibrary.getProtocolManager().sendServerPacket(player, packet);
                 closeAdvancementGUI(player);
             } catch (Exception e) {
-                getLogger().log(Level.WARNING, "Failed to open/close Advancement GUI for initialization", e);
+                getLogger().warning("Failed to open/close Advancement GUI on join: " + e.getMessage());
             }
         }, 20L);
     }
@@ -184,19 +185,18 @@ public class HotkeyManager extends JavaPlugin implements Listener {
     }
 
     private record HotkeyAction(String command, String executor) {
-
         public void execute(Player player) {
-                String parsedCommand = command.replace("%player%", player.getName());
-                switch (executor) {
-                    case "console" -> Bukkit.dispatchCommand(Bukkit.getConsoleSender(), parsedCommand);
-                    case "op" -> {
-                        boolean wasOp = player.isOp();
-                        player.setOp(true);
-                        player.performCommand(parsedCommand);
-                        player.setOp(wasOp);
-                    }
-                    default -> player.performCommand(parsedCommand);
+            String parsedCommand = command.replace("%player%", player.getName());
+            switch (executor) {
+                case "console" -> Bukkit.dispatchCommand(Bukkit.getConsoleSender(), parsedCommand);
+                case "op" -> {
+                    boolean wasOp = player.isOp();
+                    player.setOp(true);
+                    player.performCommand(parsedCommand);
+                    player.setOp(wasOp);
                 }
+                default -> player.performCommand(parsedCommand);
             }
         }
+    }
 }
