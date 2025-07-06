@@ -4,7 +4,6 @@ import com.comphenix.protocol.PacketType;
 import com.comphenix.protocol.ProtocolLibrary;
 import com.comphenix.protocol.events.*;
 import com.comphenix.protocol.wrappers.EnumWrappers;
-import com.comphenix.protocol.wrappers.WrappedChatComponent;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
@@ -54,7 +53,6 @@ public class HotkeyManager extends JavaPlugin implements Listener {
     }
 
     private void registerPacketListeners() {
-        // L, SHIFT_L 처리
         ProtocolLibrary.getProtocolManager().addPacketListener(new PacketAdapter(this,
                 ListenerPriority.NORMAL, PacketType.Play.Client.ADVANCEMENTS) {
             @Override
@@ -87,7 +85,6 @@ public class HotkeyManager extends JavaPlugin implements Listener {
             }
         });
 
-        // Q, SHIFT_Q 처리
         ProtocolLibrary.getProtocolManager().addPacketListener(new PacketAdapter(this,
                 ListenerPriority.NORMAL, PacketType.Play.Client.BLOCK_DIG) {
             @Override
@@ -118,28 +115,11 @@ public class HotkeyManager extends JavaPlugin implements Listener {
     private void closeAdvancementGUI(Player player) {
         try {
             var packet = ProtocolLibrary.getProtocolManager().createPacket(PacketType.Play.Server.CLOSE_WINDOW);
-            packet.getIntegers().write(0, 0);
+            packet.getIntegers().write(0, 0); // Advancement GUI always uses window ID 0
             ProtocolLibrary.getProtocolManager().sendServerPacket(player, packet);
         } catch (Exception e) {
             getLogger().warning("Failed to close Advancement GUI: " + e.getMessage());
         }
-    }
-
-    @EventHandler
-    public void onJoin(PlayerJoinEvent event) {
-        Player player = event.getPlayer();
-        Bukkit.getScheduler().runTaskLater(this, () -> {
-            try {
-                var packet = ProtocolLibrary.getProtocolManager().createPacket(PacketType.Play.Server.OPEN_WINDOW);
-                packet.getIntegers().write(0, 0);
-                packet.getStrings().write(0, "minecraft:advancements");
-                packet.getChatComponents().write(0, WrappedChatComponent.fromText("Advancements"));
-                ProtocolLibrary.getProtocolManager().sendServerPacket(player, packet);
-                closeAdvancementGUI(player);
-            } catch (Exception e) {
-                getLogger().warning("Failed to open/close Advancement GUI on join: " + e.getMessage());
-            }
-        }, 20L);
     }
 
     @EventHandler
@@ -200,3 +180,4 @@ public class HotkeyManager extends JavaPlugin implements Listener {
         }
     }
 }
+
