@@ -17,10 +17,7 @@ import java.util.*;
 public class HotkeyManager extends JavaPlugin implements Listener {
 
     private final Map<String, HotkeyAction> hotkeyMap = new HashMap<>();
-    private final Map<UUID, Long> lastShiftLPress = new HashMap<>();
-
-    private static final long SHIFT_MEMORY_MS = 600;
-    private static final long SHIFT_L_SIMULTANEOUS_MS = 100;
+    private final Set<UUID> suppressLOnce = new HashSet<>();
     private static final long GUI_COMMAND_DELAY_TICKS = 1L;
 
     @Override
@@ -60,28 +57,22 @@ public class HotkeyManager extends JavaPlugin implements Listener {
                 Player player = event.getPlayer();
                 if (!player.isOnline()) return;
 
-                Bukkit.getScheduler().runTask(HotkeyManager.this, () -> {
-                    boolean shift = player.isSneaking();
-                    UUID uuid = player.getUniqueId();
-                    long now = System.currentTimeMillis();
+                UUID uuid = player.getUniqueId();
+                boolean shift = player.isSneaking();
+                boolean hasL = hotkeyMap.containsKey("L");
+                boolean hasShiftL = hotkeyMap.containsKey("SHIFT_L");
 
-                    boolean hasL = hotkeyMap.containsKey("L");
-                    boolean hasShiftL = hotkeyMap.containsKey("SHIFT_L");
+                if (shift && hasShiftL) {
+                    event.setCancelled(true); // Advancement GUI 자체 차단
+                    handleKeyWithDelay("SHIFT_L", player, GUI_COMMAND_DELAY_TICKS);
+                    suppressLOnce.add(uuid);
+                    return;
+                }
 
-                    if (shift && hasShiftL) {
-                        suppressAdvancementGUIOnceBeforeDelay(player, GUI_COMMAND_DELAY_TICKS);
-                        handleKeyWithDelay("SHIFT_L", player, GUI_COMMAND_DELAY_TICKS);
-                        lastShiftLPress.put(uuid, now);
-                    } else if (hasL) {
-                        long timeSinceShift = now - lastShiftLPress.getOrDefault(uuid, 0L);
-                        if (timeSinceShift < SHIFT_L_SIMULTANEOUS_MS || (timeSinceShift < SHIFT_MEMORY_MS && shift)) {
-                            suppressAdvancementGUIOnceBeforeDelay(player, GUI_COMMAND_DELAY_TICKS);
-                            return;
-                        }
-                        suppressAdvancementGUIOnceBeforeDelay(player, GUI_COMMAND_DELAY_TICKS);
-                        handleKeyWithDelay("L", player, GUI_COMMAND_DELAY_TICKS);
-                    }
-                });
+                if (hasL && !suppressLOnce.remove(uuid)) {
+                    event.setCancelled(true); // Advancement GUI 자체 차단
+                    handleKeyWithDelay("L", player, GUI_COMMAND_DELAY_TICKS);
+                }
             }
         });
 
@@ -91,7 +82,6 @@ public class HotkeyManager extends JavaPlugin implements Listener {
             public void onPacketReceiving(PacketEvent event) {
                 Player player = event.getPlayer();
                 var action = event.getPacket().getPlayerDigTypes().read(0);
-
                 if (action != EnumWrappers.PlayerDigType.DROP_ITEM && action != EnumWrappers.PlayerDigType.DROP_ALL_ITEMS)
                     return;
 
@@ -104,22 +94,6 @@ public class HotkeyManager extends JavaPlugin implements Listener {
                 Bukkit.getScheduler().runTask(HotkeyManager.this, () -> handleKey(key, player));
             }
         });
-    }
-
-    private void suppressAdvancementGUIOnceBeforeDelay(Player player, long delayTicks) {
-        closeAdvancementGUI(player);
-        long secondDelay = Math.max(0, delayTicks - 1);
-        Bukkit.getScheduler().runTaskLater(this, () -> closeAdvancementGUI(player), secondDelay);
-    }
-
-    private void closeAdvancementGUI(Player player) {
-        try {
-            var packet = ProtocolLibrary.getProtocolManager().createPacket(PacketType.Play.Server.CLOSE_WINDOW);
-            packet.getIntegers().write(0, 0); // Advancement GUI always uses window ID 0
-            ProtocolLibrary.getProtocolManager().sendServerPacket(player, packet);
-        } catch (Exception e) {
-            getLogger().warning("Failed to close Advancement GUI: " + e.getMessage());
-        }
     }
 
     @EventHandler
@@ -180,4 +154,3 @@ public class HotkeyManager extends JavaPlugin implements Listener {
         }
     }
 }
-
